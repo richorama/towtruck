@@ -33,13 +33,39 @@ module.exports = function(actorFunc, settingsOverride){
             // todo, starting
 		    if (!actor){
 			    actor = actorFunc(actorId);
-                actor.lastCalled = actor.created = getTime();
-                actor.callCount = 0;
-			    actors[actorId] = actor;
+                actor.__lastCalled = actor.__created = getTime();
+                actor.__callCount = 0;
+
+                // if the actor provides an activation function, we must call this 
+                // and queue all subsequent requests to actor until it is active
+                if (actor.activate){
+                    actor.__state = "activating";
+                    try{
+                        actor.__activationqueue = [];
+                        actor.activate(function(){
+                            actor.__state = "active";
+                            actor.__activationqueue.forEach(function(x){
+                                actions.invoke.apply(this, x);
+                            });
+                        });                   
+                    } catch (e){
+                        console.log(e);
+                    }
+                } else {
+                    actor.__state = "active";    
+                }
+                actors[actorId] = actor;
+                // todo, add activation timeout logic 
 		    }
+
+            if (actor.__state === "activating"){
+                actor.__activationqueue.push([req, args, cb]);
+                return;
+            }
+
 		    if (actor[func]){
-                actor.lastCalled = getTime();
-                actor.callCount += 1;
+                actor.__lastCalled = getTime();
+                actor.__callCount += 1;
                 if (req.method === "POST" || req.method === "PUT"){
 			        var data = "";
 			        req.on('data', function(chunk) { data += chunk });
@@ -68,7 +94,7 @@ module.exports = function(actorFunc, settingsOverride){
             var gcTime = getTime() - settings.maxInactivityPeriod;
             for (var actorId in actors) {
                 var actor = actors[actorId];
-                if (actor.lastCalled < gcTime){
+                if (actor.__lastCalled < gcTime){
                     counter += 1;
                     if (actor.deactivate){
                         try {

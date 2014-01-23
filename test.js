@@ -14,6 +14,13 @@ function newActor(id){
         },
         getposition: function(data, cb){
             cb(null, {lat:lat,lon:lon});    
+        },
+        activate: function(cb){
+            console.log("getting ready");
+            cb();
+        },
+        deactivate: function(){
+            console.log("bye bye");    
         }
 	}
 }
