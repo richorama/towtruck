@@ -2,4 +2,10 @@
 
 Experimental actor model for Node.js, attempting to build a high-scale low latency system, by maintaining a pool of in-memory objects (actors).
 
-Next step is to support clustering.
+## TODO
+
+* ~~Support all HTTP verbs on cluster (everything is post)~~
+* ~~Forward request body to cluster~~
+* Implement bloom filters
+* Support failed nodes
+* Look at errors in more detail

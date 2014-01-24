@@ -21,14 +21,43 @@ module.exports = function(actorFunc, settingsOverride){
     // object to hold all actor instances
     var actors = {};
 
-    var invokeRemoteActor = function(server, req, cb){
-        get(server, req.url, cb);    
+    var invoke = function(actorId, func, data, cb){
+        var actor = actors[actorId];
+        if (!actor){
+            // the actor does not exist
+            queryRemoteActor(actorId, function(err, server){
+                if (!server){
+                    // the actor is not on a remote server
+                    createLocalActor(actorId, function(err, actor){
+                        invokeLocalActor(actor, func, data, cb);
+                    });    
+                } else {
+                    // the actor is on a remote server
+                    invokeRemoteActor(server, actorId, func, data, cb);    
+                }
+            });
+            return;
+        }
+            
+        // the actor is activating, so queue the request
+        if (actor.__state === "activating"){
+            actor.__activationqueue.push([actor, func, data, cb]);
+            return;
+        }
+
+        // just invoke the actor
+        invokeLocalActor(actor, func, data, cb);    
+    }
+
+
+    var invokeRemoteActor = function(server, actorId, func, data, cb){
+        post(server, "/invoke/" + actorId + "/" + func, data, cb);    
     }
 
     var createLocalActor = function(actorId, cb){
         if (actors[actorId]) cb(null, actors(actors[actorId]));
 
-        var actor = actorFunc(actorId);
+        var actor = actorFunc(actorId, {invoke:invoke});
         actor.__lastCalled = actor.__created = getTime();
         actor.__callCount = 0;
 
@@ -41,7 +70,7 @@ module.exports = function(actorFunc, settingsOverride){
                 actor.activate(function(){
                     actor.__state = "active";
                     actor.__activationqueue.forEach(function(x){
-                        actions.invoke.apply(this, x);
+                        invokeLocalActor.apply(this, x);
                     });
                 });                   
                 cb(null, actor);
@@ -67,6 +96,7 @@ module.exports = function(actorFunc, settingsOverride){
             cb();
             return;
         }
+        // insert bloom filters here!
         servers.forEach(function(server){
             counter += 1;
             get(server, "/query/" + actorId, function(err, data){
@@ -93,23 +123,20 @@ module.exports = function(actorFunc, settingsOverride){
         }
     }
 
-    var invokeLocalActor = function(actor, func, req, args, cb){
+    var invokeLocalActor = function(actor, func, data, cb){
 	    if (actor[func]){
             actor.__lastCalled = getTime();
             actor.__callCount += 1;
-            getData(req, args, function(err, data){
-                try {
-				    actor[func](data, cb);
-                } catch (e){
-                    cb(e);
-                }
-            });
+            try {
+				actor[func](data, cb);
+            } catch (e){
+                cb(e);
+            }
 	    } else {
             cb("function not found on actor (" + func + ")");        
         }
     }
-
-
+   
     // functions that can be invoked over http
     var actions = {
 	    ping: function(req, args, cb){
@@ -139,28 +166,10 @@ module.exports = function(actorFunc, settingsOverride){
 		    var actorId = args[1];
             var actor = actors[actorId];
             var func = args[2];
-
-            var actor = actors[actorId];
-            if (!actor){
-                queryRemoteActor(actorId, function(err, server){
-                    if (!server){
-                        createLocalActor(actorId, function(err, actor){
-                            invokeLocalActor(actor, func, req, args, cb);
-                        });    
-                    } else {
-                        invokeRemoteActor(server, req, cb);    
-                    }
-
-                });
-                return;
-            }
+            getData(req, args, function(err, data){
+                invoke(actorId, func, data, cb);
+            });
             
-            if (actor.__state === "activating"){
-                actor.__activationqueue.push([req, args, cb]);
-                return;
-            }
-
-            invokeLocalActor(actor, func, req, args, cb);
 	    },
         rungc: function(req, args, cb){
 
@@ -232,7 +241,6 @@ function notEmpty(value){
 }
 
 function get(server, path, cb){
-    console.log("GET http://" + server + path);
     http.get("http://" + server + path, function(resp){
         var data = "";
         resp.on("data", function(chunk){
@@ -242,6 +250,22 @@ function get(server, path, cb){
             cb(null, JSON.parse(data));
         });
     });    
+}
+
+function post(server, path, data, cb){
+    var options = url.parse("http://" + server + path);
+    options.method = "POST";
+    var req = http.request(options, function(resp){
+        var data = "";
+        resp.on("data", function(chunk){
+            data += chunk;
+        });
+        resp.on("end", function(){
+            cb(null, JSON.parse(data));
+        });
+    });    
+    req.write(JSON.stringify(data));
+    req.end();
 }
 
 
