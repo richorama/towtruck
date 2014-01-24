@@ -55,7 +55,7 @@ http://localhost:8080/health
 
 Calling other actors from inside an actor:
 
-```
+```js
 // the client function allows you to make calls from within twotruck
 function createActor(id, client){
   return {
