@@ -1,5 +1,6 @@
 var url = require('url');
 var http = require('http');
+var BloomFilter = require('bloomfilter').BloomFilter;
 
 module.exports = function(actorFunc, settingsOverride){
     if (!actorFunc || typeof(actorFunc) !== "function") throw Error("you must define a function to create actor objects");
@@ -20,6 +21,7 @@ module.exports = function(actorFunc, settingsOverride){
     
     // object to hold all actor instances
     var actors = {};
+    var bloom = new BloomFilter(32 * 32, 16);
 
     var invoke = function(actorId, func, data, cb){
         var actor = actors[actorId];
@@ -83,6 +85,7 @@ module.exports = function(actorFunc, settingsOverride){
             cb(null, actor);
         }
         actors[actorId] = actor;
+        bloom.add(actorId);
     };
 
     var queryRemoteActor = function(actorId, cb){
@@ -91,12 +94,24 @@ module.exports = function(actorFunc, settingsOverride){
         }
         var counter = 0;
         var found = false;
-        var servers = Object.keys(settings.ring);
+        var allServers = Object.keys(settings.ring);
+        if (allServers.length === 0){
+            cb();
+            return;
+        }
+        // SOME HARD THINKING TO DO HERE ABOUT BLOOM FILTERS
+        var servers = allServers.filter(function(serverName){
+            var server = settings.ring[serverName];
+            if (!server.bloom) return true;
+            return server.bloom.test(actorId);
+        });
+        
+        console.log(allServers.length + " -> " + servers.length);
         if (servers.length === 0){
             cb();
             return;
         }
-        // insert bloom filters here!
+
         servers.forEach(function(server){
             counter += 1;
             get(server, "/query/" + actorId, function(err, data){
@@ -152,7 +167,7 @@ module.exports = function(actorFunc, settingsOverride){
             cb(null,{exists: exists});
         },
         addserver: function(req, args, cb){
-            settings.ring[args[1]] = true;
+            settings.ring[args[1]] = {};
             cb();
         },
         removeserver: function(req, args, cb){
@@ -174,6 +189,7 @@ module.exports = function(actorFunc, settingsOverride){
         rungc: function(req, args, cb){
 
             //console.log("running gc");
+            var nextBloom = new BloomFilter(32 * 256, 16);
             var counter = 0;
             var gcTime = getTime() - settings.maxInactivityPeriod;
             for (var actorId in actors) {
@@ -193,12 +209,34 @@ module.exports = function(actorFunc, settingsOverride){
             // TODO: implement a rule to remove actors if there are still too many
      
             //console.log("gc collected %s/%s actors", counter,Object.keys(actors).length);
+            if (counter){
+                Object.keys(actors).forEach(function(x){
+                    nextBloom.add(x);
+                });
+                bloom = nextBloom;
+            }
+
             if (cb){
                 cb(null, { garbageCollected: counter});
             }
         },
         health: function(req, args, cb){
             cb(null, {actors: Object.keys(actors).length, time: getTime() });    
+        },
+        getbloom: function(req, args, cb){
+            cb(null, [].slice.call(bloom.buckets));    
+        },
+        updateblooms: function(req, args, cb){
+            var servers = Object.keys(settings.ring);
+            if (server.length === 0){
+                cb("no servers");
+                return;
+            }
+            servers.forEach(function(server){
+                get(server,"/getbloom", function(err, data){
+                    settings.ring[server].bloom = new BloomFilter(data, 16);
+                });
+            });    
         }
     };
 
@@ -211,12 +249,16 @@ module.exports = function(actorFunc, settingsOverride){
 	    if (actions[action]){
 		    actions[action](req, parts, function(err, data){
                 if (err){
-                    res.end(err, 500);
+                    res.writeHead(500);
+                    res.write(err);
+                    res.end();
                 } else {
                     if (data){
-			            res.end(JSON.stringify(data), 200);
+                        res.writeHead(200);
+                        res.end(JSON.stringify(data));
                     } else {
-                        res.end("",200);
+                        res.writeHead(200);
+                        res.end();
                     }
                 }
 		    });
@@ -227,6 +269,9 @@ module.exports = function(actorFunc, settingsOverride){
 
     // start the garbage collector
     setInterval(actions.rungc, settings.gcFrequency);
+
+    // start the bloom collector
+    setInterval(actions.updateblooms, settings.gcFrequency);
 
     // return the server, so the library consumer can choose the port
     return server;

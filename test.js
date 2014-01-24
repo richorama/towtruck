@@ -1,5 +1,4 @@
 ﻿var port = 8080;
-console.log(process.argv);
 if (process.argv[2]){
     port = +process.argv[2];
 }
