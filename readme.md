@@ -79,9 +79,11 @@ function createActor(id, client){
 * ~~Forward request body to cluster~~
 * ~~Implement bloom filters~~
 * ~~Write some documentation~~
+* Observe head size when garbage collecting
 * Think about clustering a bit more
 * Optimise
 * Test at scale
 * Support node failure
 * Vastly improve error reporting
+* Record metrics
 
