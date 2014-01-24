@@ -10,6 +10,7 @@ module.exports = function(actorFunc, settingsOverride){
         maxActors: 1000,
         maxInactivityPeriod: 60 * 1000,
         gcFrequency: 10000,
+        bloomFrequency: 1000,
         ring: {}
     }
 
@@ -88,30 +89,13 @@ module.exports = function(actorFunc, settingsOverride){
         bloom.add(actorId);
     };
 
-    var queryRemoteActor = function(actorId, cb){
-        if (settings.ring.length === 0){
-            cb("no servers in the ring");
+    var queryTheseRemoteServers = function(servers, actorId, cb){
+        if (server.length === 0){
+            cb("not found");
+            return;
         }
         var counter = 0;
         var found = false;
-        var allServers = Object.keys(settings.ring);
-        if (allServers.length === 0){
-            cb();
-            return;
-        }
-        // SOME HARD THINKING TO DO HERE ABOUT BLOOM FILTERS
-        var servers = allServers.filter(function(serverName){
-            var server = settings.ring[serverName];
-            if (!server.bloom) return true;
-            return server.bloom.test(actorId);
-        });
-        
-        console.log(allServers.length + " -> " + servers.length);
-        if (servers.length === 0){
-            cb();
-            return;
-        }
-
         servers.forEach(function(server){
             counter += 1;
             get(server, "/query/" + actorId, function(err, data){
@@ -123,6 +107,42 @@ module.exports = function(actorFunc, settingsOverride){
                     cb("not found");    
                 }
             });
+        });
+        
+    }
+
+    var queryRemoteActor = function(actorId, cb){
+        if (settings.ring.length === 0){
+            cb("no servers in the ring");
+        }
+        
+        var allServers = Object.keys(settings.ring);
+        if (allServers.length === 0){
+            cb();
+            return;
+        }
+        // SOME HARD THINKING TO DO HERE ABOUT BLOOM FILTERS
+        var likelyServers = allServers.filter(function(serverName){
+            var server = settings.ring[serverName];
+            if (!server.bloom) return true;
+            return server.bloom.test(actorId);
+        });
+        
+        console.log(allServers.length + " -> " + likelyServers.length);
+        if (likelyServers.length === 0){
+            // bloom filter yields nothing, so check everything, as it looks like we're about to create an actor
+            queryTheseRemoteServers(allServers, actorId, cb);
+            return;
+        }
+
+        queryTheseRemoteServers(likelyServers, actorId, function(err, server){
+            if (server){
+                // the bloom filter helped us narrow down the correct server
+                cb(null, server);
+                return;                    
+            }    
+            // false positives on bloom, try everything!
+            queryTheseRemoteServers(allServers, actorId, cb);
         });
     }
 
@@ -271,7 +291,7 @@ module.exports = function(actorFunc, settingsOverride){
     setInterval(actions.rungc, settings.gcFrequency);
 
     // start the bloom collector
-    setInterval(actions.updateblooms, settings.gcFrequency);
+    setInterval(actions.updateblooms, settings.bloomFrequency);
 
     // return the server, so the library consumer can choose the port
     return server;
