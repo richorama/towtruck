@@ -13,7 +13,7 @@ npm install towtruck
 ```js
 // create an instance of towtruck, and choose a port number
 var towtruck = require('towtruck');
-twotruck(createActor).listen(8080);
+towtruck(createActor).listen(8080);
 
 // you need to supply a function which will create actors (objects)
 function createActor(id, client){
