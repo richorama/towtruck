@@ -174,9 +174,6 @@ module.exports = function(actorFunc, settingsOverride){
    
     // functions that can be invoked over http
     var actions = {
-	    ping: function(req, args, cb){
-		    cb(null, args);
-	    },
         query: function(req, args, cb){
             var actorId = args[1];
             var exists = actors[actorId] ? true : false;

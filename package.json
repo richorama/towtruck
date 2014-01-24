@@ -1,0 +1,26 @@
+{
+  "name": "towtruck",
+  "version": "0.0.0",
+  "description": "An implementation of the actor model for node.js aiming for high scale, low latency and clustering",
+  "main": "index.js",
+  "dependencies": {
+    "bloomfilter": "~0.0.12"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richorama/towtruck.git"
+  },
+  "keywords": [
+    "actor",
+    "model"
+  ],
+  "author": "richard.astbury",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/richorama/towtruck/issues"
+  }
+}
