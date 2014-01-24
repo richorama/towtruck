@@ -1,11 +1,17 @@
-﻿require("./index.js")(newActor).listen(8080);
+﻿var port = 8080;
+console.log(process.argv);
+if (process.argv[2]){
+    port = +process.argv[2];
+}
 
-function newActor(id){
+require("./index.js")(newActor).listen(port);
+
+function newActor(id, client){
 	return {
         lat: 0,
         lon: 0,
 		foo: function(data, cb){
-			cb(null, {hello: "from actor " + id});
+			cb(null, {hello: "from actor " + id + " running on port " + port});
 		},
         setposition: function(data, cb){
             lat = data[0];    
